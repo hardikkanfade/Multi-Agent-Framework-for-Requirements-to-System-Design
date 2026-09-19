@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import mermaid from "mermaid";
 import "./styles.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8003";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
 const sample =
   "Customers can browse products and place orders. Orders must be auditable. The system should respond fast.";
