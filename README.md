@@ -24,6 +24,10 @@ Requirements Analyst
 
 The discipline analyses run concurrently and exchange explicit coupling variables. The system-level optimizer reconciles those analyses with the advocate/challenger debate under hard structural constraints. The returned MAMDO report records design variables, measured objectives, constraint evidence, and feasibility. Rule checks independently verify requirement traceability, API/entity references, and acyclic component edges; the share of untraceable components is reported as a soft objective. This adapts the paper's MDF coordination pattern to software design; it does not implement its UAV search simulation or image-map NCC reuse.
 
+## System design and SRS diagrams
+
+After generating a design, the **System design** view and SRS render requirement-derived Mermaid diagrams directly in the webpage; no Markdown file is downloaded. Both documents include the requested HLD and LLD catalogs (architecture/context/component/deployment/DFD/data/sequence/network/API/infrastructure/scalability views, and class/object/interaction/interface/dependency views). Each diagram uses the current run's actors, requirement IDs, use-case steps, API contracts, components, and entities; every view explains why it is useful and why an alternative representation was not selected. An architecture review records the advocate proposal, concrete challenger objections, advocate response, accepted/deferred issues, and adjudication. Deployment diagrams and rationale show recommended container, hosting, persistence, transport, and delivery technologies while distinguishing recommendations from user-mandated choices; cloud provider, region, scale, broker, and cache remain open unless the requirements establish them. Deterministic feasibility is a structural check, not proof of production readiness; missing acceptance thresholds and assumptions are reported for review.
+
 ## Requirements
 
 - Python 3.13+

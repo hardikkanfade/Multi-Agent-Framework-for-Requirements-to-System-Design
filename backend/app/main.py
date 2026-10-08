@@ -14,7 +14,8 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-	return {"status": "ok", "provider_mode": "demo"}
+    from .config import settings
+    return {"status": "ok", "provider_mode": settings.llm_provider}
 
 @app.post("/generate", response_model=RunResponse)
 async def generate(request: GenerateRequest):

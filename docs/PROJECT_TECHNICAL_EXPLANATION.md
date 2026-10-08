@@ -157,6 +157,23 @@ DesignForge applies the transferable coordination pattern: parallel software arc
 
 The paper's UAV flight model, spatial probability maps, NCC template matcher, and NSGA-II numerical search are intentionally not copied. They solve a different optimization domain; the current software-design workflow has no calibrated numeric simulation landscape or persistent history store. A future history-reuse feature would need an appropriate text/architecture retrieval method and explicit local data-retention controls rather than treating NCC as a generic similarity algorithm.
 
+### Research-to-implementation mapping
+
+The research contribution is implemented as an adaptation of the paper's coordination architecture, not as a reproduction of its UAV optimization experiment.
+
+| Research concept | DesignForge implementation | Effect on the design workflow |
+|---|---|---|
+| Model specialized agents as disciplines | Four parallel software architecture disciplines analyze application structure, data, security, and operations after requirements have been extracted. | Each discipline returns a scoped recommendation, applicable requirement constraints, and decisions other disciplines need to share. |
+| Exchange multidisciplinary coupling information | `DisciplineAnalysis.coupling_variables` records decisions such as architecture style, component boundaries, storage choice, consistency boundary, identity boundary, and deployment boundary. The report also records generated requirement IDs, components, dependency edges, and API/entity references. | Architectural choices are treated as connected decisions rather than isolated agent outputs. The component/API designer receives the discipline analyses and selected architecture as context. |
+| Use an MDF system-level synthesis step | The system-level optimizer/adjudicator receives all discipline recommendations together with the advocate proposal and challenger objections, then selects a coherent architecture and records its rationale and rejected alternative. | The detailed component, API, and entity design is based on a reconciled architecture decision rather than an unreviewed proposal from one agent. |
+| Define objectives and constraints | The MAMDO report measures requirement traceability and structural consistency as maximize objectives and the untraceable-component rate as a minimize objective. It also records traceability, valid component edges, valid API/component/entity references, and an acyclic dependency graph as feasibility constraints. | Objective values come from local rule checks and include evidence; a language model is not asked to fabricate metric values. |
+| Iterate when a design is infeasible | The independent critic combines with deterministic checks to decide whether a revision is needed. LangGraph feeds issue summaries back into the component/API design stage and stops at the configured revision bound. | The workflow can repair omissions and structural defects while preserving a predictable upper bound on design passes. |
+| Tailor domain-specific optimization | The system generates requirement-derived entities, endpoints, components, and diagrams from the current run. | The design outputs describe the user's requested system, not DesignForge's own implementation architecture. |
+
+In this implementation, “optimizer” means constrained, model-assisted synthesis followed by deterministic verification. It does **not** mean that a numerical optimizer searches a calibrated objective landscape: there is no NSGA-II population, fitness evaluation, or Pareto-front computation. The report's design variables describe the selected style, data store, and generated artifact counts; its objective values are measurements of the resulting design. The hard feasibility constraints are requirement traceability, valid component edges, valid API component and entity references, and an acyclic component graph. The consistency objective additionally includes the deterministic meaningful/domain-specific-design check.
+
+The architecture diagram and SRS generation are downstream presentation steps. They consume the structured results of the current run and do not participate in selecting or optimizing the architecture.
+
 ---
 
 ## 6. High-Level System Architecture
@@ -178,7 +195,8 @@ The React frontend provides:
 - System design view
 - Change-request page
 - Mermaid diagram preview
-- Generated Markdown source viewer
+- Inline rendering of the run-specific Markdown SRS and system-design documents, including Mermaid diagrams
+- Expandable Mermaid source for inspecting each rendered diagram
 
 ### 6.2 API layer
 
@@ -424,10 +442,12 @@ The controller either:
 The system produces:
 
 - JSON run response
-- Markdown design document
-- Mermaid diagrams
-- Dynamic SRS document
+- Backend-generated target-system Markdown with Mermaid diagrams and validation summary
+- Frontend-generated, run-specific System Design and SRS Markdown rendered inline in the browser
+- Mermaid SVG diagrams derived from the current requirements, architecture, components, APIs, and entities
 - Quality metrics
+
+The backend's `diagram_markdown` and the frontend's SRS/System Design documents are related but distinct artifacts. The backend Markdown provides a deterministic target-system diagram package and validation summary. The frontend builds the fuller document from the run response, adding the requirement text, architecture decision and alternative, generated tables, explanations of each diagram, and validation results.
 
 ---
 
@@ -500,7 +520,25 @@ Each endpoint contains:
 - Response entity
 - Requirement identifiers
 
-### 10.8 Critique model
+### 10.8 Use-case model
+
+Each generated use case contains:
+
+- Human-readable actor goal
+- Primary actor, or an explicit marker when the actor is unspecified
+- Preconditions and policy decisions that remain open
+- Ordered main-flow steps tied to generated endpoints and components
+- Postconditions
+- Source requirement identifiers
+- API operation references
+
+Use cases are derived from functional requirements and the generated design. They are explanatory flows, not proof that unspecified business rules have been elicited.
+
+### 10.9 Design assumptions
+
+The design records inferred fields and domain relationships separately as assumptions. For example, an order-to-product association can be shown as an `OrderItem`, while payment, tax, inventory reservation, and fulfilment are called out for confirmation rather than silently included as requirements.
+
+### 10.10 Critique model
 
 The critique contains:
 
@@ -581,7 +619,7 @@ It presents:
 
 ### SRS page
 
-The SRS is generated from the current run rather than being a fixed project document.
+The SRS Markdown is generated in the frontend from the current run response rather than being a fixed project document. It is rendered directly on the webpage; the application does not download or save an `.md` file.
 
 It contains:
 
@@ -589,13 +627,18 @@ It contains:
 - Source requirement set
 - Functional requirements
 - Non-functional requirements
-- Scope
-- Architecture
-- Data model
-- APIs
-- Security and acceptance information
-- Traceability metrics
-- Generated diagrams
+- Requirement ambiguities
+- Actor-goal use-case walkthroughs with main flows and API references
+- Selected architecture and data-store rationale
+- A considered alternative and trade-offs
+- Generated components, API contracts, and data entities
+- Requirement-to-component/API/entity traceability matrix
+- Explicit design assumptions and open acceptance decisions
+- Requirement-derived HLD and LLD Mermaid catalogs: architecture and context, component and deployment, DFD, ER/schema, sequence/activity/use case/state, network/API/data/infrastructure, scalability/load balancing/cache/queue, class/object/communication/package/interface/design-pattern/flowchart/algorithm/CRC/dependency views
+- A reason for using each diagram and why a plausible alternative view was not selected; views that lack requirement evidence explicitly show open decisions instead of fabricating behavior or infrastructure
+- A deployment recommendation matrix and target deployment diagram that distinguish Docker/OCI, managed hosting, persistence, HTTPS ingress, and CI/CD recommendations from user-mandated technology choices
+- An explicit architecture debate record: advocate proposal, requirement-anchored challenger objections, advocate response, accepted/deferred objections, and final adjudication
+- Deterministic validation metrics and the critic summary
 
 ### Change Request page
 
@@ -615,24 +658,23 @@ After applying a request, the entire design is regenerated to preserve consisten
 
 ## 13. Mermaid and Markdown Artifact Generation
 
-The backend creates a Markdown design artifact containing architecture information, API information, metrics, and Mermaid diagram blocks.
+The backend creates `diagram_markdown` deterministically from the generated architecture, component graph, API contracts, entity model, and rule-check results. The frontend produces the complete HLD/LLD diagram set from the same structured run response, including recommendation-aware deployment, sequence, state, interaction, schema, and dependency views. Diagram inputs use the generated user goals, requirement IDs, endpoint paths, component names, field lists, and relationship declarations; unsupported lifecycle, network, and scaling details are surfaced as unresolved rather than invented.
 
-The frontend extracts the Mermaid content and renders it as SVG diagrams.
+The local demo fallback splits coordinated action clauses into separate atomic requirements, assigns separate `FR-*` and `NFR-*` sequences, and flags unquantified quality attributes for acceptance-criteria clarification. It derives capability services, REST operations, candidate domain fields, and (when required) audit records from the submitted domain terms. Inferred fields and relationships are marked as assumptions so they are not confused with user-approved requirements. These deterministic heuristics are intentionally a demonstration fallback; complex language still requires stakeholder review and hosted model reasoning.
 
-The original Markdown source remains available through an expandable section. This is useful for:
+The frontend independently creates the System Design document and SRS Markdown in memory from the same run response. The architecture advocate and challenger prompts require requirement-anchored decisions and objections; the adjudicator returns a point-by-point response and separates accepted objections from deferred ones with evidence needed. Deployment recommendations are labeled as recommendations or open choices—not as requirements—and the diagrams show the selected data-store category without pretending a vendor, cloud, region, or capacity was chosen. Both documents include actor-goal flows, requirement-to-component/API/entity mappings, assumptions, debate evidence, deployment rationale, and measured structural checks. This keeps the displayed target-system design distinct from diagrams of DesignForge's own internals. Off-screen Mermaid diagrams render lazily to avoid doing all SVG layout work before the user reaches each view.
 
-- Debugging generated diagrams
-- Reproducing documentation
-- Reviewing the exact artifact produced by the system
-- Keeping diagrams consistent with structured design data
+`MarkdownDocument` renders Markdown headings, paragraphs, lists, tables, and Mermaid fenced blocks in the page. Each Mermaid block is rendered to an SVG by Mermaid, with its source available through an expandable disclosure. Mermaid is loaded lazily and configured with strict security settings. No downloadable or persisted `.md` file is produced by this UI; the Markdown document exists in the current frontend run state and remains visible in the webpage.
 
-The JSON design model remains the source of truth. The diagram is a presentation artifact derived from that model.
+The structured JSON run response is the source of truth. Backend and frontend Markdown are presentation artifacts derived from it, not independent architecture models. A changed requirement starts a new run and regenerates the structured design, use cases, assumptions, and diagrams together.
 
 ---
 
 ## 14. Evaluation Framework
 
 DesignForge is intended to be evaluated against a single-shot baseline.
+
+The reported feasibility flag means that the declared deterministic structural constraints pass. It does not establish complete requirement discovery, measured performance, security assurance, or production readiness. Unquantified non-functional requirements and design assumptions are surfaced as review items, not counted as satisfied merely because the graph is structurally valid.
 
 ### 14.1 Requirement coverage
 
@@ -775,7 +817,8 @@ The frontend can use an environment variable to select the backend URL. In a sam
 - Traceability evaluation
 - Consistency checks
 - Dynamic SRS generation
-- Mermaid diagram rendering
+- Requirement-specific Mermaid Markdown for the generated design and SRS, rendered inline in the browser
+- Diagram explanations and rationale for not choosing alternative representations
 - Change-request regeneration
 - Vercel deployment configuration
 - Project documentation
@@ -842,7 +885,7 @@ This claim accurately describes the project without implying that the generated 
 
 ## 21. Architecture Diagrams
 
-The following diagrams provide a visual explanation of the complete project. They can be rendered by Markdown viewers that support Mermaid, including GitHub and many documentation tools.
+The following diagrams document **DesignForge's own implementation architecture** for this technical explanation. They are not inserted into a user's generated SRS. The runtime SRS and System Design documents instead build their HLD and LLD Mermaid catalog from the submitted requirements and the structured design returned for that run. These technical-explanation diagrams can be rendered by Markdown viewers that support Mermaid, including GitHub and many documentation tools.
 
 ### 21.1 Complete System Context
 

@@ -70,6 +70,27 @@ class Design(BaseModel):
 	edges: list[Edge]
 	entities: list[Entity]
 	endpoints: list[Endpoint]
+	assumptions: list[str] = Field(default_factory=list)
+
+class UseCase(BaseModel):
+	name: str
+	actor: str
+	goal: str
+	preconditions: list[str]
+	main_flow: list[str]
+	postconditions: list[str]
+	requirement_ids: list[str]
+	endpoint_refs: list[str]
+
+class DeploymentTechnology(BaseModel):
+	role: str
+	technology: str
+	rationale: str
+	status: Literal["requirement", "recommendation", "open"]
+
+class DeploymentRecommendation(BaseModel):
+	technologies: list[DeploymentTechnology] = Field(default_factory=list)
+	assumptions: list[str] = Field(default_factory=list)
 
 class Issue(BaseModel):
 	severity: str
@@ -134,6 +155,8 @@ class RunResponse(BaseModel):
 	design: Design
 	critique: Critique
 	revisions: int
-	architecture_debate: dict[str, str] = Field(default_factory=dict)
+	architecture_debate: dict[str, str | list[str]] = Field(default_factory=dict)
 	diagram_markdown: str
 	mamdo: MAMDOReport | None = None
+	use_cases: list[UseCase] = Field(default_factory=list)
+	deployment: DeploymentRecommendation = Field(default_factory=DeploymentRecommendation)
