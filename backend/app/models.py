@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 class Requirement(BaseModel):
@@ -79,7 +81,38 @@ class RuleChecks(BaseModel):
 	traceability_percent: float
 	over_engineering_rate: float
 	consistency_score: float
+	component_edges_valid: bool = True
+	entity_references_valid: bool = True
+	dependency_graph_acyclic: bool = True
+	meaningful_design: bool = True
 	checks: list[str]
+
+class DisciplineAnalysis(BaseModel):
+	discipline: Literal["application", "data", "security", "operations"]
+	recommendation: str
+	coupling_variables: dict[str, str] = Field(default_factory=dict)
+	requirement_constraints: list[str] = Field(default_factory=list)
+
+class OptimizationObjective(BaseModel):
+	name: str
+	direction: Literal["maximize", "minimize"]
+	value: float
+	evidence: str
+
+class DesignConstraint(BaseModel):
+	name: str
+	satisfied: bool
+	evidence: str
+
+class MAMDOReport(BaseModel):
+	architecture: str
+	design_variables: dict[str, str]
+	coupling_variables: dict[str, str]
+	disciplines: list[DisciplineAnalysis]
+	objectives: list[OptimizationObjective]
+	constraints: list[DesignConstraint]
+	feasible: bool
+	design_iterations: int
 
 class Critique(BaseModel):
 	accepted: bool
@@ -103,3 +136,4 @@ class RunResponse(BaseModel):
 	revisions: int
 	architecture_debate: dict[str, str] = Field(default_factory=dict)
 	diagram_markdown: str
+	mamdo: MAMDOReport | None = None

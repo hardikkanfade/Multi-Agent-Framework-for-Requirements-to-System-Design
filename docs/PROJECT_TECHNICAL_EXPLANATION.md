@@ -18,6 +18,8 @@ The generated design can contain:
 - Non-functional requirements
 - Ambiguities and possible conflicts
 - Architecture recommendations
+- Parallel application, data, security, and operations discipline analyses
+- Explicit design/coupling variables and an evidence-backed feasibility report
 - Architecture trade-offs
 - Components and dependencies
 - Database entities and fields
@@ -63,16 +65,17 @@ To develop a multi-agent generative AI system that converts informal backend req
 
 1. Extract functional and non-functional requirements from natural language.
 2. Detect ambiguity and uncertainty before architecture decisions are made.
-3. Compare alternative architecture choices instead of using a fixed default.
-4. Generate components, dependencies, entities, and API contracts.
-5. Maintain links between requirements and design elements.
-6. Use an independent critic to challenge the generated design.
-7. Use deterministic code to check objective structural properties.
-8. Revise the design when severe problems are detected.
-9. Generate an SRS document dynamically from the current run.
-10. Support execution on a CPU-only machine through hosted LLM APIs.
-11. Provide reproducible demo behavior when a hosted provider is unavailable.
-12. Establish measurable evaluation criteria instead of relying only on subjective impressions.
+3. Reconcile application, data, security, and operations decisions through MDF-style system-level synthesis.
+4. Compare architecture choices instead of using a fixed default.
+5. Generate components, dependencies, entities, and API contracts.
+6. Maintain links between requirements and design elements.
+7. Use an independent critic to challenge the generated design.
+8. Use deterministic code to check objective structural properties.
+9. Revise the design when feasibility constraints fail.
+10. Generate an SRS document dynamically from the current run.
+11. Support CPU-only execution through hosted LLM APIs.
+12. Provide reproducible demo behavior when a hosted provider is unavailable.
+13. Establish measurable evaluation criteria instead of relying only on subjective impressions.
 
 ---
 
@@ -145,6 +148,14 @@ The academic contribution includes:
 - A framework suitable for baseline comparison and ablation studies
 
 The project can therefore be presented as an engineering and evaluation framework, rather than only as a chatbot interface.
+
+### Research basis and adaptation
+
+This design adapts the architecture described in “Developing an intelligent systems design framework based on multidisciplinary design analysis and multi-agent thinking integration” (Ebrahimi, Bataleblu, and Roshanian, *Expert Systems with Applications*, 248 (2024), article 123363; DOI: 10.1016/j.eswa.2024.123363). The paper models agents as disciplines, exchanges coupling information, formulates system objectives/design variables/constraints, and uses an MDF workflow with system-level optimization. Its case study additionally reuses prior UAV search missions through normalized cross-correlation (NCC) on probability maps.
+
+DesignForge applies the transferable coordination pattern: parallel software architecture disciplines provide recommendations and coupling variables; an MDF-style system optimizer synthesizes those with the architecture debate; deterministic rules measure objectives and enforce traceability/reference constraints; and the existing bounded design loop retries infeasible output. The objectives are requirement traceability and structural consistency (maximize), and the rate of components lacking requirement tags (minimize). The report includes measured values and evidence rather than asking the LLM to invent scores.
+
+The paper's UAV flight model, spatial probability maps, NCC template matcher, and NSGA-II numerical search are intentionally not copied. They solve a different optimization domain; the current software-design workflow has no calibrated numeric simulation landscape or persistent history store. A future history-reuse feature would need an appropriate text/architecture retrieval method and explicit local data-retention controls rather than treating NCC as a generic similarity algorithm.
 
 ---
 
@@ -250,7 +261,11 @@ It evaluates:
 
 The advocate may recommend a modular monolith when the requirements do not justify distributed services.
 
-### 7.3 Architecture Challenger
+### 7.3 Parallel Architecture Disciplines
+
+After requirement analysis, application architecture, data, security, and operations disciplines run concurrently. Each returns a recommendation, requirement constraints, and explicit coupling variables that other disciplines must consider. These are inputs to system-level synthesis, not independent final designs. In demo mode, local deterministic analyses provide the same structured outputs.
+
+### 7.4 Architecture Challenger
 
 The Architecture Challenger independently questions the simplest proposal.
 
@@ -267,9 +282,9 @@ It searches for:
 
 The challenger is deliberately separated from the advocate to reduce confirmation bias within a single generated response.
 
-### 7.4 Architecture Adjudicator
+### 7.5 MDF-Style System Optimizer and Adjudicator
 
-The Adjudicator compares the advocate recommendation with the challenger objections.
+The system-level optimizer reconciles discipline recommendations and coupling variables with the advocate proposal and challenger objections. It performs constrained synthesis: complete requirement traceability, valid component/API/entity references, and an acyclic dependency graph are hard constraints. Among feasible designs, it considers measured traceability and consistency while minimizing untraceable components.
 
 It selects the final architecture by considering:
 
@@ -281,9 +296,9 @@ It selects the final architecture by considering:
 - Data consistency
 - Team and deployment assumptions
 
-The adjudicator also records the rejected alternative and explains why it was not selected.
+The adjudicator also records the rejected alternative and explains why it was not selected. The returned MAMDO report records design variables, coupled references, measured objectives with evidence, constraint results, and the number of design passes. This is an MDF-inspired software architecture workflow, not the paper's numeric NSGA-II optimizer.
 
-### 7.5 Component and API Designer
+### 7.6 Component and API Designer
 
 The Component and API Designer translates the selected architecture into implementation-oriented artifacts.
 
@@ -299,7 +314,7 @@ Its responsibilities are:
 - Adding requirement identifiers to design elements
 - Preserving architectural traceability
 
-### 7.6 Red-Team Critic
+### 7.7 Red-Team Critic
 
 The Red-Team Critic attempts to identify weaknesses in the generated design.
 
@@ -317,16 +332,11 @@ It reviews:
 
 The critic is advisory from an AI perspective, but deterministic rule failures always remain binding.
 
-### 7.7 Revision Controller
+### 7.8 Revision Controller
 
 The Revision Controller determines whether the design is complete enough to return to the user.
 
-A revision is requested when:
-
-- A high-severity issue exists
-- A critical consistency issue exists
-- A requirement remains unmapped
-- The configured revision limit has not been reached
+A revision is requested while a blocking issue or deterministic feasibility constraint remains and the configured revision limit permits it. Hard constraints require complete requirement traceability, valid component edges and API entity references, and an acyclic dependency graph. The percentage of components without requirement tags is reported as a soft minimization objective, not a hard feasibility constraint.
 
 The critic feedback is passed back to the design stage so that the next version can address the identified issues.
 
@@ -336,25 +346,24 @@ The critic feedback is passed back to the design stage so that the next version 
 
 Not all agents are dependent on each other.
 
-The Requirement Analyst must finish before architecture reasoning begins. However, the Architecture Advocate and Architecture Challenger can work independently on the same requirement set.
+The Requirement Analyst must finish first. Application, data, security, and operations discipline analyses then run concurrently; the Architecture Advocate and Challenger run concurrently as well. The optimizer waits for both groups and reconciles their shared decisions.
 
 Therefore, they are executed in parallel.
 
 This improves performance because:
 
-- The advocate does not wait for the challenger.
-- The challenger does not wait for the advocate.
-- Both use the same structured requirements.
-- The adjudicator receives both results afterward.
+- Each discipline works from the same structured requirements and returns explicit coupling variables.
+- The advocate does not wait for the challenger, and the discipline agents do not wait on one another.
+- The optimizer receives all completed recommendations and debate results before detailed design.
 
 The dependency structure is:
 
 | Stage | Dependency |
 |---|---|
 | Requirement analysis | Raw requirements |
-| Advocate | Structured requirements |
-| Challenger | Structured requirements |
-| Adjudicator | Advocate and challenger results |
+| Discipline analyses | Structured requirements |
+| Advocate and challenger | Structured requirements |
+| MDF system optimizer | Discipline, advocate, and challenger results |
 | Component/API design | Adjudicated architecture |
 | Critique | Complete design and requirements |
 | Revision | Critique result |
@@ -813,7 +822,7 @@ These limitations should be stated honestly in the final academic report.
 
 DesignForge is a hosted-LLM-based multi-agent system that transforms natural-language backend requirements into a structured and verifiable system design.
 
-The Requirement Analyst extracts functional and non-functional requirements and identifies ambiguities. The Architecture Advocate proposes a suitable architecture, while the Architecture Challenger independently searches for risks and missing boundaries. An Architecture Adjudicator evaluates both perspectives and selects a final architecture. The Component/API Designer generates components, dependencies, entities, and REST contracts with requirement traceability. A Red-Team Critic then challenges the design, while deterministic Python rules verify structural properties such as traceability and API/entity consistency. LangGraph controls the workflow and sends the design back for revision when critical issues are found.
+The Requirement Analyst extracts functional and non-functional requirements and identifies ambiguities. Application, data, security, and operations disciplines analyze the requirements in parallel and expose coupled decisions. Alongside them, the Architecture Advocate proposes a design and the Challenger searches for risks. The MDF-style system optimizer adjudicates their findings under explicit structural constraints. The Component/API Designer then generates traceable components, dependencies, entities, and REST contracts. A Red-Team Critic challenges the result, while deterministic Python rules measure objectives and verify feasibility. LangGraph loops back to design while issues remain and the configured revision limit permits it.
 
 The project is designed for CPU-only execution. Hosted Gemini provides the main generative reasoning, while local computation handles orchestration, validation, metrics, diagrams, and the user interface.
 
@@ -825,7 +834,7 @@ The main contribution is not merely generating an architecture with AI. It is cr
 
 A technically defensible project claim is:
 
-> DesignForge implements a multi-agent requirements-to-backend-design workflow in which hosted LLM agents analyze requirements, debate architecture alternatives, generate traceable design artifacts, and critique proposed systems. A deterministic local rule engine independently evaluates requirement coverage and structural consistency. The system produces a dynamic SRS document and diagram package and supports iterative redesign through natural-language change requests.
+> DesignForge implements an MDF-inspired multi-agent requirements-to-backend-design workflow. Parallel application, data, security, and operations disciplines expose coupled decisions; a system-level optimizer synthesizes their recommendations with architecture advocacy and challenge. Deterministic local rules measure objectives and verify hard feasibility constraints, and LangGraph provides a bounded revision loop. The system produces traceable design artifacts, a MAMDO evidence report, a dynamic SRS, and diagrams.
 
 This claim accurately describes the project without implying that the generated architecture is automatically production-ready or that the system replaces human architects.
 
@@ -843,48 +852,65 @@ flowchart LR
 	UI[React DesignForge workbench]
 	API[FastAPI backend]
 	GRAPH[LangGraph controller]
-	AGENTS[Hosted LLM agents]
+	DISCIPLINES[Parallel architecture disciplines]
+	OPTIMIZER[MDF system optimizer]
+	DESIGN[Component/API designer]
 	RULES[Local deterministic evaluator]
 	DOCS[Generated SRS and diagrams]
 	PROVIDER[Gemini API]
 	USER --> UI
 	UI --> API
 	API --> GRAPH
-	GRAPH --> AGENTS
-	AGENTS --> PROVIDER
-	GRAPH --> RULES
+	GRAPH --> DISCIPLINES
+	DISCIPLINES --> PROVIDER
+	DISCIPLINES --> OPTIMIZER
+	OPTIMIZER --> DESIGN
+	DESIGN --> RULES
+	RULES --> GRAPH
 	GRAPH --> DOCS
 	DOCS --> UI
 ```
 
 This diagram shows the external user, browser interface, backend API, orchestration layer, hosted model, local evaluator, and generated documentation. The main design principle is that reasoning is hosted while orchestration and verification remain local.
 
-### 21.2 Five-Agent Workflow
+### 21.2 MDF-Inspired Multi-Agent Workflow
 
 ```mermaid
 flowchart TD
 	INPUT[Raw natural-language requirements]
 	ANALYST[Requirement Analyst]
+	APP[Application discipline]
+	DATA[Data discipline]
+	SECURITY[Security discipline]
+	OPS[Operations discipline]
 	ADVOCATE[Architecture Advocate]
 	CHALLENGER[Architecture Challenger]
-	ADJUDICATOR[Architecture Adjudicator]
+	OPTIMIZER[MDF system optimizer and adjudicator]
 	DESIGNER[Component and API Designer]
 	CRITIC[Red-Team Critic]
 	RULES[Deterministic Rule Engine]
 	OUTPUT[Accepted or flagged system design]
 	INPUT --> ANALYST
+	ANALYST --> APP
+	ANALYST --> DATA
+	ANALYST --> SECURITY
+	ANALYST --> OPS
 	ANALYST --> ADVOCATE
 	ANALYST --> CHALLENGER
-	ADVOCATE --> ADJUDICATOR
-	CHALLENGER --> ADJUDICATOR
-	ADJUDICATOR --> DESIGNER
+	APP --> OPTIMIZER
+	DATA --> OPTIMIZER
+	SECURITY --> OPTIMIZER
+	OPS --> OPTIMIZER
+	ADVOCATE --> OPTIMIZER
+	CHALLENGER --> OPTIMIZER
+	OPTIMIZER --> DESIGNER
 	DESIGNER --> CRITIC
 	DESIGNER --> RULES
 	CRITIC --> OUTPUT
 	RULES --> OUTPUT
 ```
 
-The analyst creates the structured requirement model first. The advocate and challenger then evaluate architecture independently. The adjudicator combines their results before the detailed design is produced.
+The analyst creates the structured requirement model first. The domain disciplines and architecture debate then run independently. The optimizer reconciles their coupled decisions and applies feasibility constraints before detailed design and deterministic evaluation.
 
 ### 21.3 Parallel Architecture Debate
 
@@ -988,12 +1014,12 @@ flowchart TB
 	FRONTEND[React and Vite frontend]
 	BACKEND[FastAPI and LangGraph backend]
 	RULES[Local Python evaluation rules]
-	DB[(Optional SQLite or PostgreSQL)]
+	MAMDO[Discipline synthesis and feasibility report]
 	GEMINI[Hosted Gemini API]
 	BROWSER --> FRONTEND
 	FRONTEND --> BACKEND
 	BACKEND --> RULES
-	BACKEND --> DB
+	BACKEND --> MAMDO
 	BACKEND --> GEMINI
 ```
 
@@ -1059,7 +1085,7 @@ The change request does not modify only one visual field. It starts a new contro
 | Diagram | Purpose |
 |---|---|
 | Complete system context | Explains the overall product boundary |
-| Five-agent workflow | Explains responsibilities and order |
+| MDF-inspired multi-agent workflow | Explains responsibilities, coupling, and synthesis |
 | Parallel architecture debate | Explains concurrent advocate and challenger roles |
 | LangGraph revision loop | Explains critique-driven regeneration |
 | Data transformation flow | Explains how raw input becomes structured design |
@@ -1070,4 +1096,4 @@ The change request does not modify only one visual field. It starts a new contro
 | Security boundary | Explains validation and external-provider boundaries |
 | Change request sequence | Explains iterative redesign |
 
-These diagrams should be used in the project report and presentation together with the corresponding explanations. The most important diagrams for a viva are the five-agent workflow, parallel architecture debate, LangGraph revision loop, deployment boundary, and evaluation comparison.
+These diagrams should be used in the project report and presentation together with the corresponding explanations. The most important diagrams for a viva are the MDF-inspired workflow, parallel architecture debate, LangGraph revision loop, deployment boundary, and evaluation comparison.

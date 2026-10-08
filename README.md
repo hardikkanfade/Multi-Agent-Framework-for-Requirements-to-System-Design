@@ -9,20 +9,20 @@ The system uses hosted LLM reasoning and keeps local execution focused on orches
 ```text
 Requirements Analyst
 	|
-	+--> Architecture Advocate --+
-	|                             +--> Architecture Adjudicator
-	+--> Architecture Challenger-+
-				      |
+	+--> Application / Data / Security / Operations disciplines (parallel)
+	|							|
+	+--> Architecture Advocate + Challenger (parallel)	|
+				\				/
+				 MDF System Optimizer
+					|
 			 Component/API Designer
-				      |
-			  Independent Red-Team Critic
-				      |
-			   Revision Controller loop
-				      |
-			 Deterministic acceptance rules
+					|
+	 Independent Red-Team Critic + Deterministic rule checks
+					|
+			 Bounded revision loop
 ```
 
-The advocate and challenger run concurrently. The adjudicator selects the simplest architecture that addresses the challenger findings. The rule engine independently checks requirement traceability, API/entity references, component edges, and dependency consistency.
+The discipline analyses run concurrently and exchange explicit coupling variables. The system-level optimizer reconciles those analyses with the advocate/challenger debate under hard structural constraints. The returned MAMDO report records design variables, measured objectives, constraint evidence, and feasibility. Rule checks independently verify requirement traceability, API/entity references, and acyclic component edges; the share of untraceable components is reported as a soft objective. This adapts the paper's MDF coordination pattern to software design; it does not implement its UAV search simulation or image-map NCC reuse.
 
 ## Requirements
 
@@ -84,6 +84,7 @@ Backend compile check:
 ```powershell
 cd backend
 python -m compileall -q .
+python -m unittest discover -s tests -v
 ```
 
 Frontend production build:
@@ -93,11 +94,10 @@ cd frontend
 npm run build
 ```
 
-The acceptance scores are calculated locally and deterministically. Hosted LLM agents propose, challenge, adjudicate, design, and critique; they do not replace the rule-based quality gate.
+The acceptance metrics and constraints are calculated locally and deterministically. Hosted LLM agents analyze disciplines, propose, challenge, adjudicate, design, and critique; they do not replace the rule-based feasibility gate.
 
 ## Documentation
 
-- [Software Requirements Specification](docs/SRS.md)
-- [System Design Report](docs/SYSTEM_DESIGN_REPORT.md)
+- [Project technical explanation](docs/PROJECT_TECHNICAL_EXPLANATION.md)
 
 Never commit `backend/.env` or API keys. Use `.env.example` as the configuration template.

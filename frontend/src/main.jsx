@@ -3,16 +3,21 @@ import { createRoot } from "react-dom/client";
 import mermaid from "mermaid";
 import "./styles.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:8003";
+const API_BASE_URL = (
+  (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) ||
+  DEFAULT_API_BASE_URL
+).replace(/\/$/, "");
 
 const sample =
   "Customers can browse products and place orders. Orders must be auditable. The system should respond fast.";
 const agents = [
-  ["01", "Requirement analyst", "Extract FR/NFR + ambiguity"],
-  ["02", "Architecture proposer", "Choose style + data store"],
-  ["03", "Component/API designer", "Create traceable contracts"],
-  ["04", "Critic / rule engine", "Cross-check the design"],
-  ["05", "Revision controller", "Loop until accepted"],
+  ["01", "Requirement analyst", "Extract FR/NFR + ambiguities"],
+  ["02", "Parallel disciplines", "Application · data · security · operations"],
+  ["03", "MDF system optimizer", "Reconcile coupled decisions and constraints"],
+  ["04", "Component/API designer", "Create traceable contracts"],
+  ["05", "Critic + deterministic rules", "Measure feasibility and design quality"],
+  ["06", "Revision controller", "Revise until feasible or bounded limit"],
 ];
 const srsSections = [
   ["01", "Document purpose"],
@@ -81,14 +86,12 @@ function Diagram({ type, result }) {
   if (type === "workflow")
     return (
       <div className="diagram workflow-diagram">
-        {agents.map(([number, title], index) => (
+        {agents.map(([number, title, detail], index) => (
           <React.Fragment key={number}>
             <div className="diagram-node">
               <b>{number}</b>
               <span>{title}</span>
-              <small>
-                {index === 3 ? "rules + LLM review" : "structured JSON"}
-              </small>
+              <small>{detail}</small>
             </div>
             {index < agents.length - 1 && (
               <span className="diagram-arrow"></span>
@@ -96,7 +99,7 @@ function Diagram({ type, result }) {
           </React.Fragment>
         ))}
         <div className="loop-label">
-          critique severity above threshold design
+          revise while feasibility constraints fail and passes remain
         </div>
       </div>
     );
@@ -123,6 +126,11 @@ function Diagram({ type, result }) {
             <small>state + routing</small>
           </div>
           <div className="diagram-node">
+            <b>MDF</b>
+            <span>System optimizer</span>
+            <small>coupled decisions + constraints</small>
+          </div>
+          <div className="diagram-node">
             <b>RULES</b>
             <span>Rule evaluator</span>
             <small>local CPU checks</small>
@@ -131,14 +139,14 @@ function Diagram({ type, result }) {
         <div className="diagram-connector"></div>
         <div className="diagram-layer">
           <div className="diagram-node">
-            <b>LLM</b>
-            <span>Hosted provider</span>
-            <small>Gemini / Groq</small>
+            <b>DISCIPLINES</b>
+            <span>Application · data · security · ops</span>
+            <small>parallel analysis + shared variables</small>
           </div>
           <div className="diagram-node">
-            <b>DATA</b>
-            <span>SQLite / Postgres</span>
-            <small>run history</small>
+            <b>LLM</b>
+            <span>Hosted provider</span>
+            <small>Gemini / demo mode</small>
           </div>
         </div>
       </div>
@@ -188,14 +196,14 @@ function Diagram({ type, result }) {
         <span className="diagram-arrow"></span>
         <div className="deployment-box hosted">
           <b>HOSTED API</b>
-          <span>Gemini / Groq</span>
+          <span>Gemini / demo</span>
           <small>optional external reasoning</small>
         </div>
         <span className="diagram-arrow"></span>
         <div className="deployment-box">
-          <b>PERSISTENCE</b>
-          <span>SQLite / PostgreSQL</span>
-          <small>runs + evaluation evidence</small>
+          <b>RUN OUTPUT</b>
+          <span>Validated JSON design</span>
+          <small>No persistent run history</small>
         </div>
       </div>
     );
@@ -457,9 +465,9 @@ function DynamicSrsDocument({ result }) {
                 <td>Entity references, edges, and dependency DAG checks.</td>
               </tr>
               <tr>
-                <td>Over-engineering</td>
+                <td>Untraceable components</td>
                 <td>{result.critique.rule_checks.over_engineering_rate}%</td>
-                <td>Components without explicit requirement tags.</td>
+                <td>Share of components without explicit requirement tags.</td>
               </tr>
             </tbody>
           </table>
@@ -1223,7 +1231,7 @@ function App() {
                 <span className="index">02</span>
                 <div>
                   <h2>Agent pipeline</h2>
-                  <p>Five controlled steps, one inspectable state.</p>
+                  <p>MDF-style discipline coordination and one inspectable state.</p>
                 </div>
               </div>
               <div className="agents">
@@ -1264,7 +1272,7 @@ function App() {
                 </div>
                 <div className="score">
                   <strong>{critique.rule_checks.over_engineering_rate}%</strong>
-                  <span>over-engineering</span>
+                  <span>untraceable components</span>
                 </div>
               </div>
               <div className="result-grid">
@@ -1327,6 +1335,59 @@ function App() {
                     <div><b>CHALLENGER</b><span>{result.architecture_debate?.challenger_summary || "No challenge recorded"}</span></div>
                     <div><b>ADJUDICATOR</b><span>{result.architecture_debate?.decision_rationale || result.architecture.justification}</span></div>
                   </div>
+                  {result.mamdo && (
+                    <>
+                      <h3>MAMDO system synthesis</h3>
+                      <p className={result.mamdo.feasible ? "pass" : "warn"}>
+                        {result.mamdo.feasible
+                          ? `Feasible after ${result.mamdo.design_iterations} design pass(es).`
+                          : `Constraints remain unmet after ${result.mamdo.design_iterations} design pass(es).`}
+                      </p>
+                      <div className="debate-log">
+                        {result.mamdo.disciplines.map((discipline) => (
+                          <div key={discipline.discipline}>
+                            <b>{discipline.discipline.toUpperCase()}</b>
+                            <span>{discipline.recommendation}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <h3>Measured objectives</h3>
+                      <div className="checks">
+                        {result.mamdo.objectives.map((objective) => (
+                          <div key={objective.name}>
+                            {objective.direction} {objective.name}: {objective.value}
+                            {objective.name === "Requirement traceability" ||
+                            objective.name === "Structural consistency" ||
+                            objective.name === "Untraceable component rate"
+                              ? "%"
+                              : ""}
+                            {" — "}
+                            {objective.evidence}
+                          </div>
+                        ))}
+                      </div>
+                      <h3>Feasibility constraints</h3>
+                      <div className="checks">
+                        {result.mamdo.constraints.map((constraint) => (
+                          <div key={constraint.name}>
+                            {constraint.satisfied ? "✓" : "✗"} {constraint.name}: {constraint.evidence}
+                          </div>
+                        ))}
+                      </div>
+                      <h3>Selected design variables</h3>
+                      <div className="checks">
+                        {Object.entries(result.mamdo.design_variables).map(([name, value]) => (
+                          <div key={name}>{name.replaceAll("_", " ")}: {value}</div>
+                        ))}
+                      </div>
+                      <h3>Coupled interfaces</h3>
+                      <div className="checks">
+                        {Object.entries(result.mamdo.coupling_variables).map(([name, value]) => (
+                          <div key={name}>{name.replaceAll("_", " ")}: {value || "none"}</div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </article>
               </div>
               <div className="detail-grid">
