@@ -26,7 +26,7 @@ The discipline analyses run concurrently and exchange explicit coupling variable
 
 ## System design and SRS diagrams
 
-After generating a design, the **System design** view and SRS render requirement-derived Mermaid diagrams directly in the webpage; no Markdown file is downloaded. Both documents include the requested HLD and LLD catalogs (architecture/context/component/deployment/DFD/data/sequence/network/API/infrastructure/scalability views, and class/object/interaction/interface/dependency views). Each diagram uses the current run's actors, requirement IDs, use-case steps, API contracts, components, and entities; every view explains why it is useful and why an alternative representation was not selected. An architecture review records the advocate proposal, concrete challenger objections, advocate response, accepted/deferred issues, and adjudication. Deployment diagrams and rationale show recommended container, hosting, persistence, transport, and delivery technologies while distinguishing recommendations from user-mandated choices; cloud provider, region, scale, broker, and cache remain open unless the requirements establish them. Deterministic feasibility is a structural check, not proof of production readiness; missing acceptance thresholds and assumptions are reported for review.
+After generating a design, the **System design** view and SRS render requirement-derived Mermaid diagrams directly in the webpage; no Markdown file is downloaded. HLD and LLD views are explored progressively: select a level, use-case flow, and one diagram at a time. Each view includes the matched requirement text and mapped components, API operations, entities, and flow steps, plus its rationale and alternative. An architecture review records the advocate proposal, challenger objections, advocate response, accepted/deferred issues, and adjudication. Deployment choices distinguish recommendations from user-mandated decisions; cloud provider, region, scale, broker, and cache remain open unless requirements establish them. The bottom-right design chat answers questions from the current run and can regenerate the design from a change request. If the hosted model is unavailable, chat reports that condition and returns any directly matched facts from the current design. Deterministic feasibility is a structural check, not proof of production readiness; missing acceptance thresholds and assumptions are reported for review.
 
 ## Requirements
 
@@ -51,14 +51,14 @@ Edit `backend/.env`:
 ```env
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 MAX_REVISIONS=2
 ```
 
 Start the API:
 
 ```powershell
-uvicorn app.main:app --host 127.0.0.1 --port 8003
+uvicorn app.main:app --host 127.0.0.1 --port 8004
 ```
 
 For reproducible offline/demo mode, use `LLM_PROVIDER=demo`. The deterministic fallbacks still produce a complete design package.
@@ -68,7 +68,7 @@ For reproducible offline/demo mode, use `LLM_PROVIDER=demo`. The deterministic f
 ```powershell
 cd frontend
 npm install
-$env:VITE_API_URL="http://127.0.0.1:8003"
+$env:VITE_API_URL="http://127.0.0.1:8004"
 npm run dev
 ```
 
@@ -79,6 +79,7 @@ Open `http://127.0.0.1:5173`.
 - `GET /health` checks service availability.
 - `POST /generate` accepts `{ "requirements_text": "..." }`.
 - `POST /change` accepts the current requirements and a natural-language change request, then regenerates the full design.
+- `POST /chat` accepts a message, recent conversation, and current design context for grounded design Q&A.
 - `POST /stages/analyze` returns the extracted requirements model.
 
 ## Validation

@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 
@@ -42,7 +43,20 @@ class GeminiProvider:
 			async with httpx.AsyncClient(timeout=45) as client:
 				response = await client.post(url, params={"key": settings.gemini_api_key}, json=payload)
 				if response.is_error:
-					raise ProviderError(f"Hosted provider request failed with HTTP {response.status_code}")
+					try:
+						error_body = response.json().get("error", {})
+					except (ValueError, AttributeError):
+						error_body = {}
+					reason = error_body.get("status")
+					message = error_body.get("message")
+					detail = ": ".join(str(part) for part in (reason, message) if part)
+					if settings.gemini_api_key:
+						detail = detail.replace(settings.gemini_api_key, "[redacted]")
+					detail = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "[redacted]", detail)
+					suffix = f": {detail}" if detail else ""
+					raise ProviderError(
+						f"Hosted provider request failed with HTTP {response.status_code}{suffix}"
+					)
 				return response.json()["candidates"][0]["content"]["parts"][0]["text"]
 		except ProviderError:
 			raise

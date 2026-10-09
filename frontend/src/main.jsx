@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8003";
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:8004";
 const API_BASE_URL = (
   (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) ||
   DEFAULT_API_BASE_URL
@@ -72,7 +72,7 @@ function markdownLabel(value) {
     .trim();
 }
 
-function buildDesignViews(result) {
+function buildDesignViews(result, activeUseCase = null) {
   const requirements = systemRequirements(result);
   const { architecture, design } = result;
   const safe = (value) =>
@@ -81,6 +81,7 @@ function buildDesignViews(result) {
   const components = design.components;
   const endpoints = design.endpoints;
   const useCases = result.use_cases || [];
+  const selectedUseCase = activeUseCase || useCases[0];
   const technologies = result.deployment?.technologies || [];
   const requirementsById = new Map(requirements.map((item) => [item.id, item]));
   const componentById = new Map(components.map((item) => [item.id, item]));
@@ -198,8 +199,8 @@ function buildDesignViews(result) {
       ...(steps.length ? [`  ACT${steps.length} --> DONE`] : []),
     ].join("\n");
   };
-  const sequence = sequenceDiagram(useCases[0]);
-  const activity = activityDiagram(useCases[0]);
+  const sequence = sequenceDiagram(selectedUseCase);
+  const activity = activityDiagram(selectedUseCase);
   const technologyNodes = technologies.map(
     (item, index) => `    TECH${index}["${safe(item.role)}: ${safe(item.technology)} (${safe(item.status)})"]`,
   );
@@ -320,7 +321,7 @@ function buildDesignViews(result) {
     `  STORE[("${safe(architecture.data_store)} store category")]`,
     ...entities.map((item) => `  ${entityKey(item)} --> STORE`),
   ].join("\n");
-  const primaryUseCase = useCases[0];
+  const primaryUseCase = selectedUseCase;
   const primaryEndpoint =
     endpoints.find((item) =>
       (primaryUseCase?.endpoint_refs || []).includes(`${item.method} ${item.path}`),
@@ -465,7 +466,7 @@ function buildSystemDesignMarkdown(result) {
   ].join("\n");
 }
 
-function buildSrsMarkdown(result) {
+function buildSrsMarkdown(result, includeDiagrams = true) {
   const requirements = systemRequirements(result);
   const functional = result.requirements.functional;
   const nonFunctional = result.requirements.non_functional;
@@ -696,7 +697,7 @@ function buildSrsMarkdown(result) {
     "",
     ...(result.deployment?.assumptions || []).map((item) => `- ${markdownLabel(item)}`),
     "",
-    ...sections.flatMap((section, index) => [
+    ...(includeDiagrams ? sections.flatMap((section, index) => [
       ...(index === 0 || sections[index - 1].level !== section.level
         ? [`## ${section.level === "HLD" ? "High-Level System Design (HLD)" : "Low-Level System Design (LLD)"}`, ""]
         : []),
@@ -710,7 +711,7 @@ function buildSrsMarkdown(result) {
       "",
       `**Why not an alternative:** ${section.alternative}`,
       "",
-    ]),
+    ]) : ["Choose one HLD or LLD view below to reveal its diagram and requirement traceability evidence."]),
     "## 10. Validation",
     "",
     metrics,
@@ -1043,26 +1044,178 @@ function Diagram({ type, result }) {
 }
 
 function DesignDiagrams({ result }) {
-  const sections = buildDesignViews(result);
+  const [level, setLevel] = useState("HLD");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [useCaseIndex, setUseCaseIndex] = useState(0);
+  const useCases = result.use_cases || [];
+  const sections = buildDesignViews(result, useCases[useCaseIndex]);
+  const visibleSections = sections.filter((section) => section.level === level);
+  const activeIndex = Math.min(selectedIndex, visibleSections.length - 1);
+  const active = visibleSections[activeIndex];
+  const selectedUseCase = useCases[useCaseIndex];
+  const requirementIds = selectedUseCase?.requirement_ids || [];
+  const relatedRequirements = systemRequirements(result).filter(
+    (requirement) => !requirementIds.length || requirementIds.includes(requirement.id),
+  );
+  const relatedComponents = result.design.components.filter(
+    (component) =>
+      !requirementIds.length ||
+      component.satisfies.some((id) => requirementIds.includes(id)),
+  );
+  const relatedEndpoints = result.design.endpoints.filter(
+    (endpoint) =>
+      !requirementIds.length ||
+      endpoint.satisfies.some((id) => requirementIds.includes(id)),
+  );
+  const relatedEntities = result.design.entities.filter(
+    (entity) =>
+      !requirementIds.length ||
+      entity.satisfies.some((id) => requirementIds.includes(id)),
+  );
+  function changeLevel(nextLevel) {
+    setLevel(nextLevel);
+    setSelectedIndex(0);
+  }
   return (
-    <div className="design-grid srs-design-grid">
-      {sections.map((item) => (
-        <article key={`${item.level}-${item.title}`}>
-          <p className="kicker">{item.level} / TARGET-SYSTEM VIEW</p>
-          <h2>{item.title}</h2>
-          <MermaidDiagram source={item.diagram} />
-          <div className="diagram-explanation">
-            <p>
-              <b>Why this view</b>
-              {item.why}
-            </p>
-            <p>
-              <b>Why not the alternative</b>
-              {item.alternative}
-            </p>
+    <div className="progressive-design">
+      <div className="diagram-toolbar">
+        <div className="diagram-level-switch" role="group" aria-label="Design level">
+          {["HLD", "LLD"].map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={level === item ? "selected" : ""}
+              onClick={() => changeLevel(item)}
+            >
+              {item === "HLD" ? "High-level design" : "Low-level design"}
+            </button>
+          ))}
+        </div>
+        {useCases.length > 1 && (
+          <label className="use-case-picker">
+            Flow to inspect
+            <select
+              value={useCaseIndex}
+              onChange={(event) => {
+                setUseCaseIndex(Number(event.target.value));
+                setSelectedIndex(0);
+              }}
+            >
+              {useCases.map((item, index) => (
+                <option value={index} key={`${item.name}-${index}`}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <div className="diagram-picker" role="group" aria-label={`${level} diagrams`}>
+        {visibleSections.map((section, index) => (
+          <button
+            type="button"
+            key={`${section.level}-${section.title}`}
+            className={activeIndex === index ? "selected" : ""}
+            onClick={() => setSelectedIndex(index)}
+          >
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            {section.title}
+          </button>
+        ))}
+      </div>
+      {active && (
+        <article className="active-diagram">
+          <div className="active-diagram-heading">
+            <div>
+              <p className="kicker">{level} / SELECTED VIEW</p>
+              <h2>{active.title}</h2>
+              <p>{active.why}</p>
+            </div>
+            <div className="diagram-stepper">
+              <button
+                type="button"
+                onClick={() => setSelectedIndex((activeIndex - 1 + visibleSections.length) % visibleSections.length)}
+                aria-label="Previous diagram"
+              >
+                Previous
+              </button>
+              <span>{activeIndex + 1} / {visibleSections.length}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedIndex((activeIndex + 1) % visibleSections.length)}
+                aria-label="Next diagram"
+              >
+                Next
+              </button>
+            </div>
           </div>
+          <MermaidDiagram source={active.diagram} />
+          <p className="diagram-alternative">
+            <b>Why not an alternative:</b> {active.alternative}
+          </p>
+          <details className="diagram-evidence" open>
+            <summary>Requirement evidence for this design</summary>
+            <div className="evidence-columns">
+              <div>
+                <h3>{selectedUseCase ? `Selected flow: ${selectedUseCase.name}` : "Source requirements"}</h3>
+                {relatedRequirements.map((requirement) => (
+                  <p key={requirement.id}>
+                    <b>{requirement.id}</b> {requirement.text}
+                  </p>
+                ))}
+              </div>
+              <div>
+                <h3>Mapped artifacts</h3>
+                <p><b>Components:</b> {relatedComponents.map((item) => item.name).join(", ") || "No component directly mapped"}</p>
+                <p><b>API operations:</b> {relatedEndpoints.map((item) => `${item.method} ${item.path}`).join(", ") || "No operation directly mapped"}</p>
+                <p><b>Data entities:</b> {relatedEntities.map((item) => item.name).join(", ") || "No entity directly mapped"}</p>
+                {selectedUseCase?.main_flow?.length > 0 && (
+                  <ol>{selectedUseCase.main_flow.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ol>
+                )}
+              </div>
+            </div>
+          </details>
         </article>
-      ))}
+      )}
+    </div>
+  );
+}
+
+function InteractiveSystemDesign({ result }) {
+  return (
+    <div className="interactive-design-document">
+      <section>
+        <p className="kicker">GENERATED FROM THIS RUN</p>
+        <h2>Architecture decision and agent debate</h2>
+        <p><b>Selected:</b> {result.architecture.style.replace(/_/g, " ")} · {result.architecture.data_store}</p>
+        <p>{result.architecture.justification}</p>
+        <div className="debate-log">
+          <div><b>ADVOCATE</b><span>{result.architecture_debate?.advocate_summary || "No separate proposal was recorded."}</span></div>
+          <div><b>CHALLENGER</b><span>{result.architecture_debate?.challenger_summary || "No challenge was recorded."}</span></div>
+          <div><b>ADVOCATE RESPONSE</b><span>{result.architecture_debate?.advocate_response || "No point-by-point response was recorded."}</span></div>
+          <div><b>ADJUDICATOR</b><span>{result.architecture_debate?.decision_rationale || result.architecture.justification}</span></div>
+          <div><b>ACCEPTED</b><span>{(result.architecture_debate?.accepted_objections || []).join("; ") || "No objection marked accepted."}</span></div>
+          <div><b>DEFERRED</b><span>{(result.architecture_debate?.deferred_objections || []).join("; ") || "No objection deferred."}</span></div>
+        </div>
+      </section>
+      <section>
+        <p className="kicker">TECHNOLOGY CHOICES</p>
+        <h2>Deployment recommendations and open choices</h2>
+        <div className="deployment-recommendations">
+          {(result.deployment?.technologies || []).map((item, index) => (
+            <article key={`${item.role}-${index}`}>
+              <b>{item.role}</b><strong>{item.technology}</strong>
+              <span>{item.status}</span><p>{item.rationale}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section>
+        <p className="kicker">ONE VIEW AT A TIME</p>
+        <h2>Explore the system design</h2>
+        <p>Select a design level, a use-case flow, and a diagram. The panel shows the requirement text and generated artifacts linked to the selected flow.</p>
+        <DesignDiagrams result={result} />
+      </section>
     </div>
   );
 }
@@ -1378,7 +1531,7 @@ function DynamicSrsDocument({ result }) {
 
 function SrsDocument({ result }) {
   if (result) {
-    const markdown = buildSrsMarkdown(result);
+    const markdown = buildSrsMarkdown(result, false);
     return (
       <section className="document-shell">
         <aside className="document-nav">
@@ -1387,12 +1540,17 @@ function SrsDocument({ result }) {
         </aside>
         <article className="srs-paper markdown-paper">
           <MarkdownDocument markdown={markdown} />
+          <section className="progressive-srs-diagrams">
+            <p className="kicker">REQUIREMENT-LINKED VIEWS</p>
+            <h2>Explore HLD and LLD diagrams</h2>
+            <DesignDiagrams result={result} />
+          </section>
         </article>
       </section>
     );
   }
   return (
-    <section className="document-shell">
+    <section className="document-shell document-shell-empty">
       <article className="srs-paper document-empty">
         <p className="kicker">RUN-SPECIFIC DOCUMENTATION</p>
         <h1>Generate a design first.</h1>
@@ -1935,6 +2093,139 @@ function ChangeRequestPage({
   );
 }
 
+function DesignChatDock({ result, onApplyChange, applying }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState("ask");
+  const [draft, setDraft] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      content:
+        "Ask me about a requirement, design decision, diagram, or technology choice. Switch to “Request change” to regenerate the design from an instruction.",
+    },
+  ]);
+  const messagesRef = useRef(null);
+  useEffect(() => {
+    if (messagesRef.current) {
+      messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+    }
+  }, [messages, open]);
+
+  function contextForChat() {
+    if (!result) return { summary: "No generated design is available yet." };
+    return {
+      summary: `Architecture: ${result.architecture.style}; data store: ${result.architecture.data_store}. Rationale: ${result.architecture.justification}.`,
+      requirements: systemRequirements(result).map(({ id, text, kind }) => ({ id, text, kind })),
+      components: result.design.components.map(({ id, name, kind, satisfies }) => ({ id, name, kind, satisfies })),
+      endpoints: result.design.endpoints.map(({ method, path, component_id, request_entity, response_entity, satisfies }) => ({ method, path, component_id, request_entity, response_entity, satisfies })),
+      entities: result.design.entities,
+      use_cases: result.use_cases,
+      architecture_debate: result.architecture_debate,
+      deployment: result.deployment,
+      assumptions: result.design.assumptions,
+    };
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const message = draft.trim();
+    if (!message || chatBusy || applying) return;
+    const updatedMessages = [...messages, { role: "user", content: message }];
+    setMessages(updatedMessages);
+    setDraft("");
+    if (mode === "change") {
+      setChatBusy(true);
+      try {
+        const outcome = await onApplyChange(message);
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            content: `Change applied. The design is regenerated as run ${outcome.run_id.slice(0, 8)}. Browse its updated requirements and diagrams above.`,
+          },
+        ]);
+      } catch (cause) {
+        setMessages((current) => [
+          ...current,
+          { role: "assistant", content: `Change failed: ${cause.message}` },
+        ]);
+      } finally {
+        setChatBusy(false);
+      }
+      return;
+    }
+    setChatBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history: updatedMessages.slice(-9, -1),
+          design_context: contextForChat(),
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const payload = await response.json();
+      setMessages((current) => [...current, { role: "assistant", content: payload.reply }]);
+    } catch (cause) {
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: `I couldn't answer that just now: ${cause.message}` },
+      ]);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  return (
+    <aside className={`design-chat-dock ${open ? "is-open" : ""}`} aria-label="Design review chat">
+      {open ? (
+        <>
+          <header className="chat-header">
+            <div><b>Design assistant</b><small>{result ? `Reviewing run ${result.run_id.slice(0, 8)}` : "Generate a design to begin"}</small></div>
+            <button type="button" className="chat-close" onClick={() => setOpen(false)} aria-label="Minimize chat">−</button>
+          </header>
+          <div className="chat-mode-switch" role="group" aria-label="Chat mode">
+            <button type="button" className={mode === "ask" ? "selected" : ""} onClick={() => setMode("ask")}>Ask about the design</button>
+            <button type="button" className={mode === "change" ? "selected" : ""} onClick={() => setMode("change")}>Request a change</button>
+          </div>
+          <div className="chat-messages" ref={messagesRef} aria-live="polite">
+            {messages.map((item, index) => (
+              <div className={`chat-message ${item.role}`} key={`${item.role}-${index}`}>
+                <b>{item.role === "user" ? "YOU" : "DESIGNFORGE"}</b>
+                <p>{item.content}</p>
+              </div>
+            ))}
+            {(chatBusy || applying) && <div className="chat-typing">Reviewing the current design…</div>}
+          </div>
+          <form className="chat-composer" onSubmit={submit}>
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={mode === "change" ? "Describe what should change…" : "Ask about requirements, diagrams, or decisions…"}
+              aria-label={mode === "change" ? "Design change request" : "Question about the design"}
+              maxLength={2000}
+              rows={2}
+            />
+            <button type="submit" disabled={!draft.trim() || chatBusy || applying || (mode === "change" && (!result || draft.trim().length < 10))}>
+              {mode === "change" ? "Regenerate design" : "Send"}
+            </button>
+          </form>
+          {!result && <p className="chat-hint">Generate a design to enable grounded Q&A and change requests.</p>}
+        </>
+      ) : (
+        <button className="chat-launcher" type="button" onClick={() => setOpen(true)}>
+          <span className="chat-launcher-icon">✦</span>
+          <span>Chat about this design</span>
+          {messages.filter((item) => item.role === "assistant").length > 1 && <i />}
+        </button>
+      )}
+    </aside>
+  );
+}
+
 function App() {
   const [text, setText] = useState(sample);
   const [result, setResult] = useState(null);
@@ -1942,6 +2233,7 @@ function App() {
   const [error, setError] = useState("");
   const [view, setView] = useState("workbench");
   const [changeText, setChangeText] = useState("");
+  const [chatApplyingChange, setChatApplyingChange] = useState(false);
   async function generate() {
     setLoading(true);
     setError("");
@@ -1982,6 +2274,31 @@ function App() {
       setError(cause.message);
     } finally {
       setLoading(false);
+    }
+  }
+  async function applyChatChange(changeRequest) {
+    if (!result) return null;
+    setChatApplyingChange(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/change`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requirements_text: text,
+          change_request: changeRequest,
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const updated = await response.json();
+      setResult(updated);
+      setText(`${text}\n${changeRequest}`);
+      return updated;
+    } catch (cause) {
+      setError(cause.message);
+      throw cause;
+    } finally {
+      setChatApplyingChange(false);
     }
   }
   const critique = result?.critique;
@@ -2047,7 +2364,7 @@ function App() {
           </div>
           {result ? (
             <article className="design-markdown-paper">
-              <MarkdownDocument markdown={buildSystemDesignMarkdown(result)} />
+              <InteractiveSystemDesign result={result} />
             </article>
           ) : (
             <div className="markdown-empty">
@@ -2059,7 +2376,7 @@ function App() {
       ) : (
         <>
           <section className="hero">
-            <div>
+            <div className="hero-copy">
               <p className="kicker">Multi-agent design lab / 01</p>
               <h1>
                 Turn loose ideas
@@ -2071,13 +2388,51 @@ function App() {
                 collaborate in an explicit revision loop. Every decision keeps a
                 thread back to the source.
               </p>
+              <div className="hero-tags">
+                <span><i /> Requirement-aware</span>
+                <span><i /> Multi-agent review</span>
+                <span><i /> Design you can explore</span>
+              </div>
             </div>
-            <div className="hero-note">
-              <span>RUN STATE</span>
-              <strong>
-                {loading ? "ORCHESTRATING" : result ? "COMPLETE" : "READY"}
-              </strong>
-              <small>LangGraph controller hosted-ready</small>
+            <div className="hero-art" role="img" aria-label="Illustration of requirements flowing through connected system design components">
+              <div className="hero-art-glow" />
+              <svg className="hero-blueprint" viewBox="0 0 560 390" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M92 188L202 111L326 172L444 93M92 188L215 280L326 172L444 252M202 111L215 280M326 172L444 93V252" stroke="url(#blueprint-line)" strokeWidth="2" strokeDasharray="6 8" />
+                <circle cx="92" cy="188" r="51" fill="#BBF7D0" fillOpacity=".12" stroke="#BBF7D0" strokeOpacity=".8" />
+                <circle cx="202" cy="111" r="41" fill="#C4B5FD" fillOpacity=".15" stroke="#C4B5FD" strokeOpacity=".9" />
+                <circle cx="215" cy="280" r="39" fill="#FDBA74" fillOpacity=".14" stroke="#FDBA74" strokeOpacity=".9" />
+                <circle cx="326" cy="172" r="57" fill="#A5F3FC" fillOpacity=".17" stroke="#A5F3FC" strokeWidth="2" />
+                <circle cx="444" cy="93" r="34" fill="#F9A8D4" fillOpacity=".16" stroke="#F9A8D4" strokeOpacity=".85" />
+                <circle cx="444" cy="252" r="43" fill="#D9F99D" fillOpacity=".12" stroke="#D9F99D" strokeOpacity=".8" />
+                <rect x="76" y="172" width="32" height="32" rx="10" fill="#BBF7D0" />
+                <path d="M86 188H98M92 182V194" stroke="#17211D" strokeWidth="2.5" strokeLinecap="round" />
+                <rect x="190" y="99" width="24" height="24" rx="8" fill="#C4B5FD" />
+                <path d="M196 107H208M196 113H205" stroke="#302B50" strokeWidth="2" strokeLinecap="round" />
+                <rect x="311" y="157" width="30" height="30" rx="10" fill="#A5F3FC" />
+                <path d="M319 172L325 178L334 166" stroke="#13343A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <rect x="430" y="80" width="28" height="28" rx="9" fill="#F9A8D4" />
+                <path d="M437 94H451M444 87V101" stroke="#47253B" strokeWidth="2" strokeLinecap="round" />
+                <rect x="432" y="240" width="24" height="24" rx="8" fill="#D9F99D" />
+                <path d="M438 252H450" stroke="#34431F" strokeWidth="2" strokeLinecap="round" />
+                <rect x="201" y="267" width="28" height="28" rx="9" fill="#FDBA74" />
+                <path d="M208 274L222 288M222 274L208 288" stroke="#4A3021" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="92" cy="188" r="3" fill="#17211D" /><circle cx="202" cy="111" r="3" fill="#17211D" />
+                <circle cx="215" cy="280" r="3" fill="#17211D" /><circle cx="326" cy="172" r="3" fill="#17211D" />
+                <circle cx="444" cy="93" r="3" fill="#17211D" /><circle cx="444" cy="252" r="3" fill="#17211D" />
+                <defs>
+                  <linearGradient id="blueprint-line" x1="92" y1="93" x2="444" y2="280" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#BBF7D0" /><stop offset=".5" stopColor="#A5F3FC" /><stop offset="1" stopColor="#C4B5FD" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <div className="hero-art-label"><span className="hero-art-pulse" /> YOUR IDEA, CONNECTED</div>
+              <div className="hero-art-status">
+                <span>RUN STATE</span>
+                <strong>{loading ? "ORCHESTRATING" : result ? "COMPLETE" : "READY"}</strong>
+                <small>Six agents · one traceable design</small>
+              </div>
+              <span className="hero-art-chip chip-top">01 / REQUIREMENTS</span>
+              <span className="hero-art-chip chip-bottom">02 / SYSTEM DESIGN</span>
             </div>
           </section>
           <section className="workspace">
@@ -2393,6 +2748,11 @@ function App() {
           </footer>
         </>
       )}
+      <DesignChatDock
+        result={result}
+        onApplyChange={applyChatChange}
+        applying={chatApplyingChange}
+      />
     </main>
   );
 }

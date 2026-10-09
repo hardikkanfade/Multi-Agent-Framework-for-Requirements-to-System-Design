@@ -6,6 +6,7 @@ from app.models import (
 	Architecture,
 	Component,
 	Critique,
+	DesignChatRequest,
 	Design,
 	Edge,
 	Endpoint,
@@ -14,7 +15,8 @@ from app.models import (
 	RunResponse,
 )
 from app.rules import evaluate_rules
-from app.providers import DemoProvider
+from app.providers import DemoProvider, ProviderError
+from app.main import design_chat
 
 
 class MamdoValidationTests(unittest.TestCase):
@@ -103,6 +105,59 @@ class MamdoValidationTests(unittest.TestCase):
 
 
 class MamdoPipelineTests(unittest.IsolatedAsyncioTestCase):
+	async def test_demo_chat_returns_a_grounded_context_only_response(self):
+		request = DesignChatRequest(
+			message="Which requirement does GET /products satisfy?",
+			design_context={
+				"summary": "A modular monolith was selected for the order system.",
+				"requirements": [
+					{"id": "FR-1", "text": "Customers can place orders."},
+					{"id": "FR-2", "text": "Customers can browse products."},
+				],
+				"components": [{"id": "orders", "name": "Order Management Service"}],
+				"endpoints": [{
+					"method": "GET",
+					"path": "/products",
+					"component_id": "catalog",
+					"satisfies": ["FR-2"],
+				}],
+			},
+		)
+		with patch("app.main.get_provider", return_value=DemoProvider()):
+			response = await design_chat(request)
+
+		self.assertIn("modular monolith", response["reply"])
+		self.assertIn("FR-2: Customers can browse products", response["reply"])
+		self.assertEqual(response["provider_mode"], "context-only")
+
+	async def test_chat_falls_back_with_context_when_hosted_provider_is_unavailable(self):
+		request = DesignChatRequest(
+			message="Which requirement does GET /products satisfy?",
+			design_context={
+				"summary": "A catalog API serves product browsing.",
+				"requirements": [{"id": "FR-1", "text": "Customers can browse products."}],
+				"endpoints": [{
+					"method": "GET",
+					"path": "/products",
+					"component_id": "catalog",
+					"satisfies": ["FR-1"],
+				}],
+				"components": [{"id": "catalog", "name": "Product Catalog Service"}],
+			},
+		)
+		provider = DemoProvider()
+		with patch("app.main.get_provider", return_value=provider), patch.object(
+			provider,
+			"complete_text",
+			side_effect=ProviderError("Hosted provider request failed with HTTP 429"),
+		):
+			response = await design_chat(request)
+
+		self.assertIn("HTTP 429", response["reply"])
+		self.assertIn("FR-1: Customers can browse products", response["reply"])
+		self.assertIn("Product Catalog Service", response["reply"])
+		self.assertEqual(response["provider_mode"], "context-only")
+
 	async def test_demo_pipeline_returns_feasible_mamdo_report(self):
 		with patch("app.graph.get_provider", return_value=DemoProvider()):
 			result = await run_pipeline(

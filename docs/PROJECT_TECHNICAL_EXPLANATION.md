@@ -195,8 +195,10 @@ The React frontend provides:
 - System design view
 - Change-request page
 - Mermaid diagram preview
-- Inline rendering of the run-specific Markdown SRS and system-design documents, including Mermaid diagrams
-- Expandable Mermaid source for inspecting each rendered diagram
+- Inline rendering of the run-specific SRS and system-design content; no Markdown download is required
+- Progressive HLD/LLD diagram explorer with use-case selection and requirement-to-artifact evidence
+- Expandable Mermaid source for the selected diagram
+- Persistent bottom-right chat for current-design Q&A and natural-language change requests
 
 ### 6.2 API layer
 
@@ -206,6 +208,7 @@ The FastAPI backend exposes HTTP endpoints for:
 - Complete design generation
 - Stage-level requirement analysis
 - Natural-language change requests
+- Design-context chat; direct requirement/API/component matches remain available when the hosted model is unavailable
 
 The API validates input and returns a structured run response.
 

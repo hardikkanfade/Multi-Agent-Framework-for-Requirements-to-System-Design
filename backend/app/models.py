@@ -148,6 +148,15 @@ class ChangeRequest(BaseModel):
 	requirements_text: str = Field(min_length=20)
 	change_request: str = Field(min_length=10)
 
+class DesignChatMessage(BaseModel):
+	role: Literal["user", "assistant"]
+	content: str = Field(min_length=1, max_length=4000)
+
+class DesignChatRequest(BaseModel):
+	message: str = Field(min_length=1, max_length=2000)
+	history: list[DesignChatMessage] = Field(default_factory=list, max_length=12)
+	design_context: dict = Field(default_factory=dict)
+
 class RunResponse(BaseModel):
 	run_id: str
 	requirements: Requirements
