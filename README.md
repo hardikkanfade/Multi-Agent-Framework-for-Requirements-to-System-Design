@@ -74,6 +74,20 @@ npm run dev
 
 Open `http://127.0.0.1:5173`.
 
+## Deploy for free with Render
+
+The repository includes a Render Blueprint at [`render.yaml`](./render.yaml) that deploys the API and frontend as separate services. The frontend is a free static site; the API uses Render's free Python web-service tier. Free API instances can sleep when idle, so the first request after a quiet period may take longer. Free-tier limits and availability can change.
+
+1. Push this repository to GitHub. Do not commit `backend/.env` or any API key.
+2. Sign in to [Render](https://render.com), choose **New** → **Blueprint**, and connect this repository.
+3. Review the services from `render.yaml` and select **Apply**. Wait for both services to finish their initial deploy.
+4. Open `https://designforge-frontend.onrender.com`. The API health endpoint is `https://designforge-api.onrender.com/health`.
+5. The deployment starts with `LLM_PROVIDER=demo`, which requires no API key and uses the deterministic fallback output. To enable hosted Gemini responses, open the `designforge-api` service's **Environment** settings, set `LLM_PROVIDER` to `gemini`, and add `GEMINI_API_KEY` as a secret environment variable. Save and redeploy.
+
+The Blueprint configures the API's CORS allowlist for the frontend's default Render URL. If Render reports either service name is already taken, change the corresponding `name` in `render.yaml`, update the frontend's `VITE_API_URL` to the API's actual `https://<service-name>.onrender.com` URL, and update the API's `ALLOWED_ORIGINS` to the frontend's actual URL. Apply the Blueprint again after editing.
+
+The `VITE_API_URL` setting is embedded into the frontend at build time. If changing it from the Render dashboard rather than the Blueprint, trigger a new frontend deploy after changing the variable. Prometheus in `docker-compose.yml` is optional and is not needed for the hosted application.
+
 ## API
 
 - `GET /health` checks service availability.

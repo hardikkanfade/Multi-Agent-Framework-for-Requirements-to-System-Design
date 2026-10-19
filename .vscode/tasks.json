@@ -1,0 +1,37 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "DesignForge Backend",
+			"type": "shell",
+			"command": ".\\backend\\.venv\\Scripts\\uvicorn.exe",
+			"args": [
+				"--app-dir",
+				"backend",
+				"app.main:app",
+				"--host",
+				"127.0.0.1",
+				"--port",
+				"8004"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "DesignForge Frontend",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"--prefix",
+				"frontend",
+				"run",
+				"dev",
+				"--",
+				"--host",
+				"127.0.0.1"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

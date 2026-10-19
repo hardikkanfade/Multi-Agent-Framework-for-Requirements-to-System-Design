@@ -1,17 +1,30 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .graph import run_pipeline
 from .models import ChangeRequest, DesignChatRequest, GenerateRequest, RunResponse
 from .providers import ProviderError, get_provider
+from prometheus_fastapi_instrumentator import Instrumentator
+
+allowed_origins = [
+	origin.strip()
+	for origin in os.getenv(
+		"ALLOWED_ORIGINS",
+		"http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
+	).split(",")
+	if origin.strip()
+]
 
 app = FastAPI(title="DesignForge API", version="0.1.0")
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
+	allow_origins=allowed_origins,
 	allow_origin_regex=r"http://(localhost|127\.0\.0\.1):517[0-9]",
 	allow_methods=["*"],
 	allow_headers=["*"],
 )
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 @app.get("/health")
 def health():
