@@ -1,7 +1,9 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-from app.graph import build_mamdo_report, run_pipeline
+from fastapi.testclient import TestClient
+
+from app.graph import _complete_json_with_retry, build_mamdo_report, run_pipeline
 from app.models import (
 	Architecture,
 	Component,
@@ -15,8 +17,8 @@ from app.models import (
 	RunResponse,
 )
 from app.rules import evaluate_rules
-from app.providers import DemoProvider, ProviderError
-from app.main import design_chat
+from app.providers import DemoProvider, GeminiProvider, ProviderError, get_provider
+from app.main import app, design_chat
 
 
 class MamdoValidationTests(unittest.TestCase):
@@ -105,6 +107,35 @@ class MamdoValidationTests(unittest.TestCase):
 
 
 class MamdoPipelineTests(unittest.IsolatedAsyncioTestCase):
+	def test_gemini_mode_requires_an_api_key(self):
+		with patch("app.providers.settings.llm_provider", "gemini"), patch(
+			"app.providers.settings.gemini_api_key", ""
+		):
+			with self.assertRaisesRegex(ProviderError, "GEMINI_API_KEY is required"):
+				get_provider()
+
+	def test_unknown_provider_mode_is_rejected(self):
+		with patch("app.providers.settings.llm_provider", "unknown"):
+			with self.assertRaisesRegex(ProviderError, "Unsupported LLM_PROVIDER"):
+				get_provider()
+
+	async def test_gemini_rejects_invalid_json_instead_of_using_fallback(self):
+		provider = GeminiProvider()
+		with patch.object(provider, "_request", new=AsyncMock(return_value="not JSON")):
+			with self.assertRaisesRegex(ProviderError, "Gemini returned invalid JSON"):
+				await provider.complete_json("test prompt", {"fallback": True})
+
+	async def test_quota_errors_are_not_retried(self):
+		provider = DemoProvider()
+		with patch.object(
+			provider,
+			"complete_json",
+			new=AsyncMock(side_effect=ProviderError("Gemini API request failed with HTTP 429", 429)),
+		) as complete_json:
+			with self.assertRaisesRegex(ProviderError, "HTTP 429"):
+				await _complete_json_with_retry(provider, "test prompt", {})
+		complete_json.assert_awaited_once()
+
 	async def test_demo_chat_returns_a_grounded_context_only_response(self):
 		request = DesignChatRequest(
 			message="Which requirement does GET /products satisfy?",
@@ -128,9 +159,9 @@ class MamdoPipelineTests(unittest.IsolatedAsyncioTestCase):
 
 		self.assertIn("modular monolith", response["reply"])
 		self.assertIn("FR-2: Customers can browse products", response["reply"])
-		self.assertEqual(response["provider_mode"], "context-only")
+		self.assertEqual(response["provider_mode"], "demo")
 
-	async def test_chat_falls_back_with_context_when_hosted_provider_is_unavailable(self):
+	async def test_chat_surfaces_error_when_provider_is_unavailable(self):
 		request = DesignChatRequest(
 			message="Which requirement does GET /products satisfy?",
 			design_context={
@@ -151,12 +182,37 @@ class MamdoPipelineTests(unittest.IsolatedAsyncioTestCase):
 			"complete_text",
 			side_effect=ProviderError("Hosted provider request failed with HTTP 429"),
 		):
-			response = await design_chat(request)
+			with self.assertRaisesRegex(ProviderError, "HTTP 429"):
+				await design_chat(request)
 
-		self.assertIn("HTTP 429", response["reply"])
-		self.assertIn("FR-1: Customers can browse products", response["reply"])
-		self.assertIn("Product Catalog Service", response["reply"])
-		self.assertEqual(response["provider_mode"], "context-only")
+	async def test_pipeline_surfaces_provider_errors_instead_of_returning_local_design(self):
+		provider = DemoProvider()
+		with patch(
+			"app.graph.get_provider",
+			return_value=provider,
+		), patch.object(
+			provider,
+			"complete_json",
+			side_effect=ProviderError("Gemini request failed with HTTP 401"),
+		):
+			with self.assertRaisesRegex(
+				ProviderError, "Requirements analysis failed.*HTTP 401"
+			):
+				await run_pipeline("Customers can browse the product catalog.")
+
+	def test_generate_endpoint_returns_provider_errors_as_http_502(self):
+		with patch(
+			"app.graph.get_provider",
+			side_effect=ProviderError("GEMINI_API_KEY is required"),
+		):
+			with TestClient(app) as client:
+				response = client.post(
+					"/generate",
+					json={"requirements_text": "Customers can browse the product catalog."},
+				)
+
+		self.assertEqual(response.status_code, 502)
+		self.assertIn("GEMINI_API_KEY is required", response.json()["detail"])
 
 	async def test_demo_pipeline_returns_feasible_mamdo_report(self):
 		with patch("app.graph.get_provider", return_value=DemoProvider()):

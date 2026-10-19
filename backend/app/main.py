@@ -1,10 +1,12 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from .config import settings
 from .graph import run_pipeline
 from .models import ChangeRequest, DesignChatRequest, GenerateRequest, RunResponse
-from .providers import ProviderError, get_provider
+from .providers import DemoProvider, ProviderError, get_provider
 from prometheus_fastapi_instrumentator import Instrumentator
 
 allowed_origins = [
@@ -17,6 +19,13 @@ allowed_origins = [
 ]
 
 app = FastAPI(title="DesignForge API", version="0.1.0")
+
+
+@app.exception_handler(ProviderError)
+async def provider_error_handler(request: Request, error: ProviderError):
+	return JSONResponse(status_code=502, content={"detail": str(error)})
+
+
 app.add_middleware(
 	CORSMiddleware,
 	allow_origins=allowed_origins,
@@ -28,8 +37,15 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 @app.get("/health")
 def health():
-    from .config import settings
-    return {"status": "ok", "provider_mode": settings.llm_provider}
+	provider_mode = settings.llm_provider.strip().lower()
+	provider_configured = provider_mode == "demo" or (
+		provider_mode == "gemini" and bool(settings.gemini_api_key)
+	)
+	return {
+		"status": "ok",
+		"provider_mode": provider_mode,
+		"provider_configured": provider_configured,
+	}
 
 @app.post("/generate", response_model=RunResponse)
 async def generate(request: GenerateRequest):
@@ -89,14 +105,10 @@ Current design context (JSON): {context}
 Recent conversation (JSON): {[item.model_dump() for item in request.history]}
 User message: {request.message}"""
 	provider = get_provider()
-	try:
-		reply = await provider.complete_text(prompt, context_only_reply)
-	except ProviderError as error:
-		reply = f"Hosted assistant unavailable ({error}). {context_only_reply}"
-		return {"reply": reply, "provider_mode": "context-only"}
+	reply = await provider.complete_text(prompt, context_only_reply)
 	return {
 		"reply": reply,
-		"provider_mode": "hosted" if reply != context_only_reply else "context-only",
+		"provider_mode": "demo" if isinstance(provider, DemoProvider) else "gemini",
 	}
 
 @app.post("/stages/analyze")

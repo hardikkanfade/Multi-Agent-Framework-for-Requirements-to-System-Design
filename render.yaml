@@ -10,7 +10,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.13.4
       - key: LLM_PROVIDER
-        value: demo
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash
       - key: ALLOWED_ORIGINS

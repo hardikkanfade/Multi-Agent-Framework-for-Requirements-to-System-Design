@@ -39,8 +39,10 @@ async def _complete_json_with_retry(provider, prompt: str, fallback: dict) -> di
 	for attempt in range(2):
 		try:
 			return await provider.complete_json(prompt, fallback)
-		except ProviderError:
-			if attempt == 1:
+		except ProviderError as error:
+			if attempt == 1 or (
+				error.status_code is not None and error.status_code < 500
+			):
 				raise
 			await asyncio.sleep(0.2)
 
@@ -49,19 +51,18 @@ async def _complete_text_with_retry(provider, prompt: str, fallback: str) -> str
 	for attempt in range(2):
 		try:
 			return await provider.complete_text(prompt, fallback)
-		except ProviderError:
-			if attempt == 1:
+		except ProviderError as error:
+			if attempt == 1 or (
+				error.status_code is not None and error.status_code < 500
+			):
 				raise
 			await asyncio.sleep(0.2)
 
 
-def _debate_items(value, fallback: list[str]) -> list[str]:
-	if isinstance(value, str):
-		return [value] if value.strip() else fallback
-	if isinstance(value, list):
-		items = [str(item).strip() for item in value if str(item).strip()]
-		return items or fallback
-	return fallback
+def _debate_items(value) -> list[str]:
+	if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+		raise ProviderError("Architecture adjudication objection fields must be lists of text.")
+	return [item.strip() for item in value if item.strip()]
 
 
 _ACTION_WORDS = (
@@ -217,8 +218,10 @@ async def analyze_requirements(state: PipelineState) -> dict:
 	try:
 		data = await get_provider().complete_json(prompt, fallback.model_dump())
 		return {"requirements": Requirements.model_validate(data)}
-	except (ProviderError, ValueError, TypeError):
-		return {"requirements": fallback}
+	except ProviderError as error:
+		raise ProviderError(f"Requirements analysis failed: {error}") from error
+	except (ValueError, TypeError) as error:
+		raise ProviderError(f"Requirements analysis returned an invalid response: {error}") from error
 
 
 def _local_architecture(requirements: Requirements) -> Architecture:
@@ -383,10 +386,25 @@ async def analyze_disciplines(state: PipelineState) -> dict:
 		try:
 			data = await _complete_json_with_retry(provider, prompt, fallback.model_dump())
 			return DisciplineAnalysis.model_validate(data)
-		except (ProviderError, ValueError, TypeError):
-			return fallback
+		except ProviderError as error:
+			raise ProviderError(f"{discipline.title()} discipline analysis failed: {error}") from error
+		except (ValueError, TypeError) as error:
+			raise ProviderError(
+				f"{discipline.title()} discipline analysis returned an invalid response: {error}"
+			) from error
 
-	analyses = await asyncio.gather(*(analyze(name) for name in discipline_names))
+	analysis_results = await asyncio.gather(
+		*(analyze(name) for name in discipline_names),
+		return_exceptions=True,
+	)
+	failures = [result for result in analysis_results if isinstance(result, Exception)]
+	if failures:
+		first_error = failures[0]
+		raise ProviderError(
+			"Discipline analysis failed: "
+			+ "; ".join(str(error) for error in failures)
+		) from first_error
+	analyses = analysis_results
 	return {"discipline_analyses": analyses}
 
 
@@ -409,17 +427,32 @@ async def propose_architecture(state: PipelineState) -> dict:
 	challenger_prompt = f"""You are an independent Architecture Challenger reviewing a concrete proposal for this target system. Do not provide generic checklist advice. Anchor each objection to a requirement ID or explicitly label it as an unresolved assumption. Challenge whether the selected service boundaries, persistence model, API shape, security controls, failure behavior, and deployment choices are justified. For each objection state: (1) the decision challenged, (2) a requirement-specific failure mode, (3) a viable alternative, and (4) the evidence needed to decide. Return 2-4 concise numbered objections as plain text, no preamble. Requirements: {requirements.model_dump_json()} Candidate architecture: {fallback.model_dump_json()}"""
 	advocate_task = asyncio.create_task(_complete_json_with_retry(provider, advocate_prompt, fallback.model_dump()))
 	challenger_task = asyncio.create_task(_complete_text_with_retry(provider, challenger_prompt, local_challenger_summary))
-	advocate_data, challenger_data = await asyncio.gather(advocate_task, challenger_task, return_exceptions=True)
-	advocate = fallback if isinstance(advocate_data, BaseException) else Architecture.model_validate(advocate_data)
-	challenger_summary = local_challenger_summary if isinstance(challenger_data, BaseException) else str(challenger_data)
+	try:
+		advocate_data, challenger_summary = await asyncio.gather(
+			advocate_task, challenger_task, return_exceptions=True
+		)
+		failures = [
+			result for result in (advocate_data, challenger_summary)
+			if isinstance(result, Exception)
+		]
+		if failures:
+			raise ProviderError(
+				"Architecture proposal agents failed: "
+				+ "; ".join(str(error) for error in failures)
+			) from failures[0]
+		advocate = Architecture.model_validate(advocate_data)
+	except ProviderError as error:
+		raise ProviderError(f"Architecture proposal failed: {error}") from error
+	except (ValueError, TypeError) as error:
+		raise ProviderError(f"Architecture proposal returned an invalid response: {error}") from error
 	discipline_summaries = [analysis.model_dump() for analysis in state.get("discipline_analyses", [])]
 	adjudicator_prompt = f"""You are the system-level adjudicator in an MDF-style multidisciplinary design review. Produce an auditable debate outcome, not a generic summary. Reconcile the discipline analyses and coupling variables, the advocate proposal, and each challenger objection. For every objection, state whether it is accepted, rejected, or deferred, explain why using the submitted requirement evidence, and name the resulting design consequence or open decision. Preserve complete traceability and valid references as hard constraints. Select the simplest supported design. Do not fabricate measurements, requirement IDs, technologies as user-mandated facts, or production-readiness claims. Return JSON with:
 selected (matching this Architecture schema exactly: {fallback.model_dump_json()}),
 decision_rationale (specific evidence-based adjudication),
 rejected_alternative,
 advocate_response (point-by-point response to the challenger),
-accepted_objections (list of objection IDs/numbers and consequences),
-deferred_objections (list of unresolved objection IDs/numbers and evidence needed).
+accepted_objections (array of strings naming objection IDs/numbers and consequences),
+deferred_objections (array of strings naming unresolved objection IDs/numbers and evidence needed).
 Requirements: {requirements.model_dump_json()}
 Discipline analyses: {discipline_summaries}
 Advocate proposal: {advocate.model_dump_json()}
@@ -439,44 +472,50 @@ Challenger objections: {challenger_summary}"""
 				"deferred_objections": challenge_points,
 			},
 		)
-		selected = Architecture.model_validate(selected_data.get("selected", advocate.model_dump()))
+		if not isinstance(selected_data, dict):
+			raise ProviderError("Architecture adjudication must return a JSON object.")
+		required_fields = {
+			"selected",
+			"decision_rationale",
+			"rejected_alternative",
+			"advocate_response",
+			"accepted_objections",
+			"deferred_objections",
+		}
+		missing_fields = required_fields.difference(selected_data)
+		if missing_fields:
+			raise ProviderError(
+				"Architecture adjudication is missing required fields: "
+				+ ", ".join(sorted(missing_fields))
+			)
+		for field in ("decision_rationale", "rejected_alternative", "advocate_response"):
+			if not isinstance(selected_data[field], str):
+				raise ProviderError(
+					f"Architecture adjudication field '{field}' must be text."
+				)
+		for field in ("accepted_objections", "deferred_objections"):
+			if not isinstance(selected_data[field], list):
+				raise ProviderError(
+					f"Architecture adjudication field '{field}' must be a list."
+				)
+		selected = Architecture.model_validate(selected_data["selected"])
 		debate = {
 			"advocate_summary": advocate.justification,
 			"challenger_summary": challenger_summary,
-			"rejected_alternative": selected_data.get("rejected_alternative", "microservices" if selected.style == "modular_monolith" else "modular_monolith"),
-			"decision_rationale": selected_data.get(
-				"decision_rationale",
-				f"{selected.justification} {selected.data_store_justification} "
-				"The selected boundary keeps domain responsibilities testable while respecting the stated deployment evidence.",
-			),
-			"advocate_response": selected_data.get(
-				"advocate_response",
-				"The proposal is retained only where it meets the stated requirements; remaining objections are tracked below.",
-			),
-			"accepted_objections": _debate_items(selected_data.get("accepted_objections"), []),
-			"deferred_objections": _debate_items(
-				selected_data.get("deferred_objections"), challenge_points
-			),
+			"rejected_alternative": selected_data["rejected_alternative"],
+			"decision_rationale": selected_data["decision_rationale"],
+			"advocate_response": selected_data["advocate_response"],
+			"accepted_objections": _debate_items(selected_data["accepted_objections"]),
+			"deferred_objections": _debate_items(selected_data["deferred_objections"]),
 			"optimizer_method": "MDF-style constrained discipline synthesis",
 		}
 		return {"architecture": selected, "architecture_debate": debate}
-	except (ProviderError, ValueError, TypeError):
-		return {
-			"architecture": advocate,
-			"architecture_debate": {
-				"advocate_summary": advocate.justification,
-				"challenger_summary": challenger_summary,
-				"rejected_alternative": "microservices" if advocate.style == "modular_monolith" else "modular_monolith",
-				"decision_rationale": (
-					f"{advocate.justification} {advocate.data_store_justification} "
-					"Unresolved challenger points are retained as assumptions and acceptance criteria."
-				),
-				"advocate_response": "The local adjudication cannot resolve the challenge without further requirement evidence.",
-				"accepted_objections": [],
-				"deferred_objections": challenge_points,
-				"optimizer_method": "MDF-style constrained discipline synthesis",
-			},
-		}
+	except ProviderError as error:
+		raise ProviderError(f"Architecture adjudication failed: {error}") from error
+	except (ValueError, TypeError) as error:
+		raise ProviderError(
+			f"Architecture adjudication returned an invalid response: {error}"
+		) from error
 
 
 def _local_design(requirements: Requirements) -> Design:
@@ -840,11 +879,11 @@ async def design_components(state: PipelineState) -> dict:
 	try:
 		data = await get_provider().complete_json(prompt, fallback.model_dump())
 		design = Design.model_validate(data)
-		if not design.assumptions:
-			design.assumptions = fallback.assumptions
 		return {"design": design}
-	except (ProviderError, ValueError, TypeError):
-		return {"design": fallback}
+	except ProviderError as error:
+		raise ProviderError(f"Component/API design failed: {error}") from error
+	except (ValueError, TypeError) as error:
+		raise ProviderError(f"Component/API design returned an invalid response: {error}") from error
 
 
 async def critique_design(state: PipelineState) -> dict:
@@ -885,7 +924,25 @@ async def critique_design(state: PipelineState) -> dict:
 	prompt = f"""You are the independent Red-Team Critic agent. Challenge this proposed design against every requirement. Look for missing behavior, unjustified components, security gaps, invalid API/entity references, scalability risks, and traceability failures. Return JSON with accepted (boolean), issues (array of objects with severity/category/message/related_ids), and summary. Your findings are advisory, but do not ignore a real defect. Requirements: {state['requirements'].model_dump_json()} Design: {state['design'].model_dump_json()} Deterministic checks: {checks.model_dump_json()}"""
 	try:
 		data = await get_provider().complete_json(prompt, {"accepted": rule_critique.accepted, "issues": [issue.model_dump() for issue in rule_critique.issues], "summary": rule_critique.summary})
-		llm_critique = Critique(accepted=bool(data.get("accepted", True)), issues=data.get("issues", []), rule_checks=checks, summary=data.get("summary", rule_critique.summary))
+		if not isinstance(data, dict):
+			raise ProviderError("Design critique must return a JSON object.")
+		required_fields = {"accepted", "issues", "summary"}
+		missing_fields = required_fields.difference(data)
+		if missing_fields:
+			raise ProviderError(
+				"Design critique is missing required fields: "
+				+ ", ".join(sorted(missing_fields))
+			)
+		if not isinstance(data["accepted"], bool):
+			raise ProviderError("Design critique field 'accepted' must be a boolean.")
+		if not isinstance(data["issues"], list) or not isinstance(data["summary"], str):
+			raise ProviderError("Design critique fields 'issues' and 'summary' have invalid types.")
+		llm_critique = Critique(
+			accepted=data["accepted"],
+			issues=data["issues"],
+			rule_checks=checks,
+			summary=data["summary"],
+		)
 		if not rule_critique.accepted:
 			llm_critique.accepted = False
 		existing_messages = {issue.message for issue in llm_critique.issues}
@@ -896,8 +953,10 @@ async def critique_design(state: PipelineState) -> dict:
 		if state["requirements"].ambiguities or state["design"].assumptions:
 			llm_critique.summary = rule_critique.summary
 		return {"critique": llm_critique}
-	except (ProviderError, ValueError, TypeError):
-		return {"critique": rule_critique}
+	except ProviderError as error:
+		raise ProviderError(f"Design critique failed: {error}") from error
+	except (ValueError, TypeError) as error:
+		raise ProviderError(f"Design critique returned an invalid response: {error}") from error
 
 
 def should_revise(state: PipelineState) -> str:

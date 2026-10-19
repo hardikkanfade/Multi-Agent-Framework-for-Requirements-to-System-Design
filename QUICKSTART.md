@@ -1,25 +1,23 @@
 # DesignForge – Quick Start & Testing Guide
 
-## ✅ System Status: FULLY OPERATIONAL
-
-All components running and validated. The multi-agent design synthesis system is working end-to-end.
-
----
-
-## Quick Start (5 minutes)
+## Quick Start
 
 ### 1. Start Backend
 ```bash
 cd backend
 pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8003 --reload
+copy .env.example .env
+# Edit .env and set GEMINI_API_KEY to your Google AI Studio key.
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8004 --reload
 ```
 
 **Verify:** 
 ```bash
-curl http://127.0.0.1:8003/health
-# Expected: {"status":"ok","provider_mode":"demo"}
+curl http://127.0.0.1:8004/health
+# Expected: provider_mode is "gemini" and provider_configured is true.
 ```
+
+If Gemini is not configured or a Gemini request fails, generation returns an error rather than a local mock design. To use deterministic non-AI demo output intentionally, set `LLM_PROVIDER=demo` in `.env`.
 
 ### 2. Start Frontend
 ```bash
@@ -191,7 +189,7 @@ export LLM_PROVIDER=gemini
 export GEMINI_API_KEY=your_api_key_here
 ```
 
-Backend will query Gemini API instead of using deterministic fallback.
+Backend sends agent prompts to the Gemini API. Provider or response-format failures are surfaced to the caller; they are not replaced with deterministic design output.
 
 ### Run Tests
 

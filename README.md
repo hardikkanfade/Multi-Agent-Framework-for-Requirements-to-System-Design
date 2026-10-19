@@ -61,7 +61,8 @@ Start the API:
 uvicorn app.main:app --host 127.0.0.1 --port 8004
 ```
 
-For reproducible offline/demo mode, use `LLM_PROVIDER=demo`. The deterministic fallbacks still produce a complete design package.
+The backend defaults to `LLM_PROVIDER=gemini` and requires `GEMINI_API_KEY`. Set `LLM_PROVIDER=demo` explicitly to run with deterministic, non-AI demo responses. Gemini configuration, API, and response-format errors are returned as HTTP 502 errors instead of being hidden by generated fallback designs.
+Each generated design uses several Gemini requests for the analysis, discipline, architecture, design, and critique stages. Gemini rate limits (HTTP 429) are reported as errors and are not silently retried or replaced with demo output. Rule checks, Mermaid diagram assembly, use-case formatting, and deployment recommendations remain deterministic application logic rather than LLM calls.
 
 ### Frontend
 
@@ -80,9 +81,11 @@ The repository includes a Render Blueprint at [`render.yaml`](./render.yaml) tha
 
 1. Push this repository to GitHub. Do not commit `backend/.env` or any API key.
 2. Sign in to [Render](https://render.com), choose **New** → **Blueprint**, and connect this repository.
-3. Review the services from `render.yaml` and select **Apply**. Wait for both services to finish their initial deploy.
+3. Review the services from `render.yaml` and select **Apply**. Render will ask for the `GEMINI_API_KEY` secret; enter your Google AI Studio Gemini API key. Wait for both services to finish their initial deploy.
 4. Open `https://designforge-frontend.onrender.com`. The API health endpoint is `https://designforge-api.onrender.com/health`.
-5. The deployment starts with `LLM_PROVIDER=demo`, which requires no API key and uses the deterministic fallback output. To enable hosted Gemini responses, open the `designforge-api` service's **Environment** settings, set `LLM_PROVIDER` to `gemini`, and add `GEMINI_API_KEY` as a secret environment variable. Save and redeploy.
+5. The API is configured for Gemini and will return an explicit error if the key is missing or the provider request fails. The `/health` endpoint reports whether a key is configured (`provider_configured`); only a real provider request confirms that the key and model are valid.
+
+To deploy without Gemini, set `LLM_PROVIDER=demo` in the `designforge-api` environment settings. Demo mode is deterministic and does not call an AI model.
 
 The Blueprint configures the API's CORS allowlist for the frontend's default Render URL. If Render reports either service name is already taken, change the corresponding `name` in `render.yaml`, update the frontend's `VITE_API_URL` to the API's actual `https://<service-name>.onrender.com` URL, and update the API's `ALLOWED_ORIGINS` to the frontend's actual URL. Apply the Blueprint again after editing.
 
